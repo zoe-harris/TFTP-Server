@@ -1,6 +1,6 @@
 # Zoe Harris
 # CSCE365 Computer Networks
-# Programming Assignment #1
+# Programming Assignment #3
 
 from socket import *
 import sys
