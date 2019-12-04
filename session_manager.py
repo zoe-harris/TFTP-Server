@@ -6,7 +6,9 @@ import threading
 from packet import Packet
 import sys
 from socket import *
-from session import Session
+from queue import Queue
+from write import Write
+from read import Read
 
 
 class SessionManager:
@@ -19,9 +21,9 @@ class SessionManager:
 
         # dictionary tracks TIDs associated with existing threads
         self.threadIDs = {}
-        # dictionary holds a lock for each thread's TID
-        self.threadLocks = {}
+        self.threads = list()
 
+        # variable is set on receiving shutdown.txt
         self.shutting_down = False
 
     def run_manager(self):
@@ -33,37 +35,57 @@ class SessionManager:
                 self.server_socket.close()
                 sys.exit()
 
-            # receive new packet
+            # receive new packet from client
             pkt = self.server_socket.recvfrom(1024)
 
-            # check if RRQ for shutdown.txt
-            if Packet.get_op_code(pkt) == 1:
-                if int.from_bytes(pkt[0:2], 'big') == 1:
+            # check if packet is RRQ for shutdown.txt
+            if Packet.get_op_code(pkt) == 1 and Packet.get_file_name(pkt) is "shutdown.txr":
 
-                    file_name = Packet.get_file_name(pkt)
+                # if no existing threads, shut down immediately
+                if len(self.threads) == 0:
+                    self.server_socket.close()
+                    sys.exit()
 
-                    if file_name is "shutdown.txt":
+                # else, need finish out existing threads
+                else:
+                    self.shutting_down = True
 
-                        if len(self.threadIDs) == 0:
-                            self.server_socket.close()
-                            sys.exit()
-                        else:
-                            self.shutting_down = True
-
-            # if not RRQ or WRQ and known TID, forward packet to thread
+            # if not a read or write request
             pkt_op_code = Packet.get_op_code(pkt)
             if pkt_op_code != 1 and pkt_op_code != 2:
+
+                # if packet has a known TID
                 if pkt[1][1] in self.threadIDs:
-                    print("Forward packet to correct thread")
-                    # FIXME: forward pkt to correct thread
 
-            # else if RRQ or WRQ and not shutting down, start a new thread
-            else:
+                    # add packet to receive queue of correct thread
+                    self.threadIDs.get(pkt[1][1]).recv_queue.put(pkt)
 
-                if self.shutting_down is False:
-                    # create new session + add to list
-                    new_session = Session(pkt)
-                    self.threadIDs[pkt[1][1]] = new_session
-                    # start new thread for this session
-                    new_thread = threading.Thread(target=new_session.run())
-                    new_thread.start()
+            # if RRQ or WRQ and not shutting down
+            if (pkt_op_code == 1 or pkt_op_code == 2) and not self.shutting_down:
+
+                # make new send and receive queues
+                rcv_queue = Queue()
+                snd_queue = Queue()
+
+                # if op code == 2, start session in write mode
+                if Packet.get_op_code(pkt) == 2:
+                    new_session = Write(pkt, rcv_queue, snd_queue)
+                # if op code == 1, start session in read mode
+                else:
+                    new_session = Read(pkt, rcv_queue, snd_queue)
+
+                # make + start new thread using new session
+                new_thread = threading.Thread(target=new_session.run())
+                new_thread.start()
+
+                # add thread / TID pair to dictionary + thread to list
+                self.threadIDs[pkt[1][1]] = new_thread
+                self.threads.append(new_thread)
+
+            # check send queues of threads + send packets as needed
+            for thread in self.threads:
+                if not thread.snd_queue.empty():
+                    snd_pkt = thread.snd_queue.get()
+                    self.server_socket.sendto(snd_pkt[0], snd_pkt[1])
+
+

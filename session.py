@@ -5,35 +5,38 @@
 from socket import *
 from packet import Packet
 import time
+import queue
+from threading import *
 
 
-class Session:
+class Session(Thread):
 
-    def __init__(self, pkt):
+    def __init__(self, first_pkt, rcv_queue):
 
-        # constructor variables
-        self.pkt = pkt
-        self.file_name = Packet.get_file_name(pkt)
-        self.ip_address = pkt[1][0]
-        self.client_port = pkt[1][1]
-        
-        # client address tuple
-        self.client = (self.ip_address, self.client_port)
+        Thread.__init__(self)
+
+        self.rcv_queue = rcv_queue
+        self.send_pkt = None
+
+        # set pkt to first pkt received
+        self.pkt = first_pkt
+
+        # extract file name from first packet
+        file_name = Packet.get_file_name(self.pkt[0])
+
+        # make client address tuple
+        self.client = (self.pkt[1][0], self.pkt[1][1])
 
         # open file to be read/written from
-        self.file = open(self.file_name, 'rb')
-
-        # create client socket + bind to client port
-        self.server_socket = socket(AF_INET, SOCK_DGRAM)
+        self.file = open(file_name, 'rb')
 
         # retransmission variables
         self.time_sent = time.time()
         self.last_pkt = bytearray()
 
-        # track ack and block number
+        # track ack and block numbers
         self.ack_num = 0
         self.block_num = 0
-        self.next_block_num = 1
 
         # determine end of transmission
         self.last_pkt_made = False
@@ -58,36 +61,34 @@ class Session:
 
             # retransmit on short timeout
             if self.short_timeout():
-                self.server_socket.sendto(self.last_pkt, self.client)
-                # FIXME: Forward last pkt to SessionManager
+                self.send_pkt = self.last_pkt
 
             # terminate on long timeout
             if self.long_timeout():
                 break
 
             # receive new packet
-            pkt = self.server_socket.recvfrom(1024)
-            # FIXME: Get new pkt from SessionManager
+            if not self.rcv_queue.empty():
 
-            # terminate if ERROR packet
-            if Packet.get_op_code(pkt) == 5:
-                self.terminate()
+                pkt = (self.rcv_queue.get())[0]
 
-            # if ACK packet, send DATA packet
-            if Packet.get_op_code(pkt) == 4:
+                # terminate if ERROR packet
+                if Packet.get_op_code(pkt) == 5:
+                    self.terminate()
 
-                # send new DATA packet if correct ACK number
-                if Packet.get_block_num(pkt) == self.block_num - 1:
-                    if not self.last_pkt_made:
-                        self.send_data()
-                else:
-                    # retransmit last packet if incorrect ACK number
-                    # FIXME: Forward last packet to SessionManager
-                    self.server_socket.sendto(self.last_pkt, self.client)
+                # if ACK packet, send DATA packet
+                if Packet.get_op_code(pkt) == 4:
 
-            # check if ACK is for final DATA packet
-            if Packet.get_block_num(pkt) == self.last_ack_num - 1:
-                break
+                    # send new DATA packet if correct ACK number
+                    if Packet.get_block_num(pkt) == self.block_num - 1:
+                        if not self.last_pkt_made:
+                            self.send_data()
+                    else:
+                        self.send_pkt = self.last_pkt
+
+                # check if ACK is for final DATA packet
+                if Packet.get_block_num(pkt) == self.last_ack_num - 1:
+                    break
 
         # terminate the connection
         self.terminate()
@@ -100,20 +101,16 @@ class Session:
 
             # retransmit on short timeout
             if self.short_timeout():
-                # FIXME: Forward last pkt to SessionManager
-                self.server_socket.sendto(self.last_pkt, self.client)
+                self.send_pkt = self.last_pkt
 
             # terminate on long timeout
             if self.long_timeout():
                 break
 
             # receive new packet
-            # FIXME: Get pkt from SessionManager
-            pkt = self.server_socket.recvfrom(1024)
+            if not self.rcv_queue.empty():
 
-            # check TID
-            if pkt[1][1] == self.client_port:
-                pkt = pkt[0]
+                pkt = (self.rcv_queue.get())[0]
 
                 # terminate if ERROR packet
                 if Packet.get_op_code(pkt) == 5:
@@ -144,9 +141,8 @@ class Session:
 
         # make + send new packet
         data = bytearray(self.file.read(512))
-        pkt = Packet.make_data(self.block_num, data)
-        # FIXME: Forward pkt to SessionManager
-        self.server_socket.sendto(pkt, self.client)
+        data_pkt = Packet.make_data(self.block_num, data)
+        self.send_pkt = data_pkt
 
         # if this was the last of the data
         if len(data) < 512:
@@ -155,19 +151,18 @@ class Session:
 
         # update time sent, last packet, and block number
         self.time_sent = time.time()
-        self.last_pkt = pkt
+        self.last_pkt = data_pkt
         self.block_num += 1
 
     def send_ack(self):
 
         # make + send new ACK
-        ack = Packet.make_ack(self.next_block_num)
+        ack = Packet.make_ack(self.block_num + 1)
         self.last_pkt = ack
-        # FIXME: Forward last pkt to SessionManager
-        self.server_socket.sendto(ack, self.client)
+        self.send_pkt = ack
 
         # update expected block number
-        self.next_block_num += 1
+        self.block_num += 1
         self.time_sent = time.time()
 
     """ TIMEOUT AND TERMINATION """
