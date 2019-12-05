@@ -4,17 +4,16 @@
 
 from packet import Packet
 from threading import Thread
-from queue import Queue
 
 
 class Write(Thread):
 
-    def __init__(self, write_request, rcv_queue, snd_queue):
+    def __init__(self, socket, write_request, rcv_queue):
 
         Thread.__init__(self)
 
         self.rcv_queue = rcv_queue
-        self.snd_queue = snd_queue
+        self.socket = socket
 
         # make client address tuple
         self.client = (write_request[1][0], write_request[1][1])
@@ -46,16 +45,14 @@ class Write(Thread):
 
                     # if DATA packet's block number is old, send last ACK
                     if int.from_bytes(packet_received[2:4], 'big') != next_block_num:
-                        # FIXME: Sending packet?
-                        self.snd_queue.put([last_ack, self.client])
+                        self.socket.sendto(last_ack, self.client)
 
                     else:
 
                         # make + send new ACK packet
                         ack = p.make_ack(next_block_num)
                         last_ack = ack
-                        # FIXME: Sending packet?
-                        self.snd_queue.put([ack, self.client])
+                        self.socket.sendto(last_ack, self.client)
                         next_block_num += 1
 
                         # write data from packet to file, exit if too much data
@@ -75,3 +72,4 @@ class Write(Thread):
 
         # Close file, client socket, terminate program
         self.file.close()
+

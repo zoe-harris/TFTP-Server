@@ -2,7 +2,6 @@
 # CSCE365 Computer Networks
 # Programming Assignment #3
 
-import threading
 from packet import Packet
 import sys
 from socket import *
@@ -18,9 +17,10 @@ class SessionManager:
         # make + bind server socket
         self.server_socket = socket(AF_INET, SOCK_DGRAM)
         self.server_socket.bind(('', server_port))
+        self.server_socket.settimeout(0.00001)
 
         # dictionary tracks TIDs associated with existing threads
-        self.threadIDs = {}
+        self.TIDs = {}
         self.threads = list()
 
         # variable is set on receiving shutdown.txt
@@ -31,61 +31,67 @@ class SessionManager:
         while True:
 
             # check whether time to exit program
-            if self.shutting_down is True and len(self.threadIDs) == 0:
+            if self.shutting_down is True and len(self.threads) == 0:
                 self.server_socket.close()
                 sys.exit()
 
             # receive new packet from client
-            pkt = self.server_socket.recvfrom(1024)
+            try:
+                pkt = self.server_socket.recvfrom(1024)
 
-            # check if packet is RRQ for shutdown.txt
-            if Packet.get_op_code(pkt) == 1 and Packet.get_file_name(pkt) is "shutdown.txr":
+                # extract op code and file name from packet
+                pkt_op_code = Packet.get_op_code(pkt[0])
 
-                # if no existing threads, shut down immediately
-                if len(self.threads) == 0:
-                    self.server_socket.close()
-                    sys.exit()
+                # check if packet is RRQ for shutdown.txt
+                if pkt_op_code == 1 or pkt_op_code == 2:
 
-                # else, need finish out existing threads
-                else:
-                    self.shutting_down = True
+                    pkt_file_name = Packet.get_file_name(pkt[0])
 
-            # if not a read or write request
-            pkt_op_code = Packet.get_op_code(pkt)
-            if pkt_op_code != 1 and pkt_op_code != 2:
+                    if pkt_file_name == "shutdown.txt":
 
-                # if packet has a known TID
-                if pkt[1][1] in self.threadIDs:
+                        print("Received shutdown.txt")
 
-                    # add packet to receive queue of correct thread
-                    self.threadIDs.get(pkt[1][1]).recv_queue.put(pkt)
+                        # if no existing threads, shut down immediately
+                        if len(self.threads) == 0:
+                            self.server_socket.close()
+                            sys.exit()
 
-            # if RRQ or WRQ and not shutting down
-            if (pkt_op_code == 1 or pkt_op_code == 2) and not self.shutting_down:
+                        # else, need finish out existing threads
+                        else:
+                            self.shutting_down = True
 
-                # make new send and receive queues
-                rcv_queue = Queue()
-                snd_queue = Queue()
+                # if not a read or write request
+                if pkt_op_code != 1 and pkt_op_code != 2:
 
-                # if op code == 2, start session in write mode
-                if Packet.get_op_code(pkt) == 2:
-                    new_session = Write(pkt, rcv_queue, snd_queue)
-                # if op code == 1, start session in read mode
-                else:
-                    new_session = Read(pkt, rcv_queue, snd_queue)
+                    for thread in self.threads:
+                        if thread[0] == pkt[1][1]:
+                            thread[1].rcv_queue.put(pkt)
 
-                # make + start new thread using new session
-                new_thread = threading.Thread(target=new_session.run())
-                new_thread.start()
+                # if RRQ or WRQ and not shutting down
+                if (pkt_op_code == 1 or pkt_op_code == 2) and not self.shutting_down:
 
-                # add thread / TID pair to dictionary + thread to list
-                self.threadIDs[pkt[1][1]] = new_thread
-                self.threads.append(new_thread)
+                    # if op code == 2, start session in write mode
+                    if pkt_op_code == 2:
 
-            # check send queues of threads + send packets as needed
-            for thread in self.threads:
-                if not thread.snd_queue.empty():
-                    snd_pkt = thread.snd_queue.get()
-                    self.server_socket.sendto(snd_pkt[0], snd_pkt[1])
+                        # make + start new write session thread
+                        new_thread = Write(self.server_socket, pkt, Queue())
+                        new_thread.start()
+
+                        # add thread / TID pair to threads list
+                        self.threads.append([pkt[1][1], new_thread])
+
+                    # if op code == 1, start session in read mode
+                    else:
+
+                        # make + start new read session thread
+                        new_thread = Read(self.server_socket, pkt, Queue())
+                        new_thread.start()
+                        print("Starting new thread")
+
+                        # add thread / TID pair to threads list
+                        self.threads.append([pkt[1][1], new_thread])
+
+            except timeout:
+                print("", end="")
 
 

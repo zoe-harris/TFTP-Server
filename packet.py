@@ -50,14 +50,3 @@ class Packet:
         file_name = pkt[2:counter]
         return file_name.decode("utf-8")
 
-    """
-
-    2 bytes     string     1 byte  string    1 byte
-    ------------------------------------------------
-    | Opcode |  Filename  |   0   |  Mode  |   0   |
-    ------------------------------------------------
-
-    RRQ : Opcode #1
-    WRQ : Opcode #2
-
-    """
