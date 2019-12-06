@@ -49,8 +49,6 @@ class SessionManager:
 
                     if pkt_file_name == "shutdown.txt":
 
-                        print("Received shutdown.txt")
-
                         # if no existing threads, shut down immediately
                         if len(self.threads) == 0:
                             self.server_socket.close()
@@ -76,7 +74,6 @@ class SessionManager:
                         # make + start new write session thread
                         new_thread = Write(self.server_socket, pkt, Queue())
                         new_thread.start()
-                        print("Starting new thread")
 
                         # add thread / TID pair to threads list
                         self.threads.append([pkt[1][1], new_thread])
@@ -87,7 +84,6 @@ class SessionManager:
                         # make + start new read session thread
                         new_thread = Read(self.server_socket, pkt, Queue())
                         new_thread.start()
-                        print("Starting new thread")
 
                         # add thread / TID pair to threads list
                         self.threads.append([pkt[1][1], new_thread])

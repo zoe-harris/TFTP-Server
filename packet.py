@@ -30,6 +30,10 @@ class Packet:
     """ METHODS FOR READING FROM PACKETS """
 
     @staticmethod
+    def valid_packet(pkt):
+
+
+    @staticmethod
     def get_op_code(pkt):
         return int.from_bytes(pkt[0:2], 'big')
 

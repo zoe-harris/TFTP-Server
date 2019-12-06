@@ -4,7 +4,7 @@
 
 from packet import Packet
 from threading import Thread
-from time import *
+import time
 
 
 class Read(Thread):
@@ -25,7 +25,7 @@ class Read(Thread):
         # open file to be read/written from
         self.file = open(file_name, 'rb')
 
-        # track block number and last packet made
+        # timeout + retransmission variables
         self.block_num = 1
         self.last_pkt = bytearray()
         self.last_pkt_made = False
@@ -38,6 +38,13 @@ class Read(Thread):
 
         while True:
 
+            # retransmit last packet on short timeout
+            if time.time() - self.time_sent > 0.1:
+                self.socket.sendto(self.last_pkt, self.client)
+            # terminate connection on long timeout
+            elif time.time() - self.time_sent > 1:
+                break
+
             if not self.rcv_queue.empty():
 
                 # receive a new packet
@@ -49,7 +56,7 @@ class Read(Thread):
                     # if ACK block number is correct, send new packet
                     if int.from_bytes(packet_received[2:4], 'big') != (self.block_num - 1):
                         self.socket.sendto(self.last_pkt, self.client)
-                        self.time_sent = time()
+                        self.time_sent = time.time()
 
                     else:
 
@@ -64,9 +71,10 @@ class Read(Thread):
                 if int.from_bytes(packet_received[0:2], 'big') == 5:
                     break
 
+            time.sleep(0.02)
+
         # Close file, client socket, and terminate program
         self.file.close()
-        print("Thread ending")
 
     def send_data(self):
 
@@ -75,7 +83,7 @@ class Read(Thread):
         data_header = Packet.make_data_header(self.block_num)
         data_packet = data_header + data_array
         self.socket.sendto(data_packet, self.client)
-        self.time_sent = time()
+        self.time_sent = time.time()
         self.last_pkt = data_packet
 
         # update DATA block number

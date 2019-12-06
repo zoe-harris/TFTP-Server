@@ -11,7 +11,10 @@ class TestPacket:
     @pytest.mark.parametrize("input_num, expected", [
         (0, bytearray(b'\x00\x04\x00\x00')),
         (32767, bytearray(b'\x00\x04\x7f\xff')),
-        (65534, bytearray(b'\x00\x04\xff\xfe'))
+        (65534, bytearray(b'\x00\x04\xff\xfe')),
+        # FIXME: pytest.mark.xfail((70000, bytearray(b'\x00\x04\xff\xfe'))),
+        # FIXME: pytest.mark.xfail((512, bytearray(b'\x00\x04\x7f\xff'))),
+        # FIXME: pytest.mark.xfail((47834, bytearray(b'\x00\x04\x00\x00')))
     ])
     def test_make_ack(self, input_num, expected):
         assert Packet.make_ack(input_num) == expected
@@ -19,7 +22,10 @@ class TestPacket:
     @pytest.mark.parametrize("input_block, input_data, expected", [
         (0, b'this is a test', bytearray(b'\x00\x03\x00\x00this is a test')),
         (32767, b'this is a test', bytearray(b'\x00\x03\x7f\xffthis is a test')),
-        (65534, b'this is a test', bytearray(b'\x00\x03\xff\xfethis is a test'))
+        (65534, b'this is a test', bytearray(b'\x00\x03\xff\xfethis is a test')),
+        # FIXME: pytest.mark.xfail((32767, b'this is a test', bytearray(b'\x00\x03\x00\x00this is a test'))),
+        # FIXME: pytest.mark.xfail((0, b'this is a test', bytearray(b'\x00\x03\x7f\xffthis is a test'))),
+        # FIXME: pytest.mark.xfail((65534, b'this is a test', bytearray(b'\x00\x03\xff\xfefail this test')))
     ])
     def test_make_data_pkt(self, input_block, input_data, expected):
         assert Packet.make_data(input_block, input_data) == expected

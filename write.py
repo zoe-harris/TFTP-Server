@@ -4,6 +4,7 @@
 
 from packet import Packet
 from threading import Thread
+import time
 
 
 class Write(Thread):
@@ -24,35 +25,44 @@ class Write(Thread):
         # open file to be read/written from
         self.file = open(file_name, 'rb')
 
-    def run(self):
+        # timeout + retransmission variables
+        self.last_ack = bytearray()
+        self.time_sent = 0
 
-        # make Packet object
-        p = Packet()
+    def run(self):
 
         # keep track of anticipated block numbers
         next_block_num = 1
-        last_ack = bytearray()
 
         # enter loop of receiving DATA packets
         while True:
+
+            # retransmit last packet on short timeout
+            if time.time() - self.time_sent > 0.1:
+                self.socket.sendto(self.last_ack, self.client)
+            # terminate connection on long timeout
+            elif time.time() - self.time_sent > 1:
+                break
 
             if not self.rcv_queue.empty():
 
                 packet_received = (self.rcv_queue.get())[0]
 
                 # if packet is a DATA packet (op code = 3)
-                if int.from_bytes(packet_received[0:2], 'big') == 3:
+                if Packet.get_op_code(packet_received) == 3:
 
                     # if DATA packet's block number is old, send last ACK
                     if int.from_bytes(packet_received[2:4], 'big') != next_block_num:
-                        self.socket.sendto(last_ack, self.client)
+                        self.socket.sendto(self.last_ack, self.client)
+                        self.time_sent = time.time()
 
                     else:
 
                         # make + send new ACK packet
-                        ack = p.make_ack(next_block_num)
-                        last_ack = ack
-                        self.socket.sendto(last_ack, self.client)
+                        ack = Packet.make_ack(next_block_num)
+                        self.last_ack = ack
+                        self.socket.sendto(self.last_ack, self.client)
+                        self.time_sent = time.time()
                         next_block_num += 1
 
                         # write data from packet to file, exit if too much data
@@ -67,8 +77,10 @@ class Write(Thread):
                     break
 
                 # if packet is an ERROR packet (op code = 5)
-                if int.from_bytes(packet_received[0:2], 'big') == 5:
+                if Packet.get_op_code(packet_received) == 5:
                     break
+
+            time.sleep(0.02)
 
         # Close file, client socket, terminate program
         self.file.close()
