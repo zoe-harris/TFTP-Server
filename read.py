@@ -4,6 +4,7 @@
 
 from packet import Packet
 from threading import Thread
+from time import *
 
 
 class Read(Thread):
@@ -28,6 +29,7 @@ class Read(Thread):
         self.block_num = 1
         self.last_pkt = bytearray()
         self.last_pkt_made = False
+        self.time_sent = 0
 
     def run(self):
 
@@ -47,6 +49,7 @@ class Read(Thread):
                     # if ACK block number is correct, send new packet
                     if int.from_bytes(packet_received[2:4], 'big') != (self.block_num - 1):
                         self.socket.sendto(self.last_pkt, self.client)
+                        self.time_sent = time()
 
                     else:
 
@@ -63,6 +66,7 @@ class Read(Thread):
 
         # Close file, client socket, and terminate program
         self.file.close()
+        print("Thread ending")
 
     def send_data(self):
 
@@ -71,6 +75,7 @@ class Read(Thread):
         data_header = Packet.make_data_header(self.block_num)
         data_packet = data_header + data_array
         self.socket.sendto(data_packet, self.client)
+        self.time_sent = time()
         self.last_pkt = data_packet
 
         # update DATA block number

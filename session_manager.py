@@ -35,8 +35,8 @@ class SessionManager:
                 self.server_socket.close()
                 sys.exit()
 
-            # receive new packet from client
             try:
+                # receive new packet from client
                 pkt = self.server_socket.recvfrom(1024)
 
                 # extract op code and file name from packet
@@ -76,6 +76,7 @@ class SessionManager:
                         # make + start new write session thread
                         new_thread = Write(self.server_socket, pkt, Queue())
                         new_thread.start()
+                        print("Starting new thread")
 
                         # add thread / TID pair to threads list
                         self.threads.append([pkt[1][1], new_thread])
@@ -93,5 +94,3 @@ class SessionManager:
 
             except timeout:
                 print("", end="")
-
-
